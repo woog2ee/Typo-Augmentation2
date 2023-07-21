@@ -10,7 +10,7 @@ def calc_accuracy(x, y):
     return train_acc
 
 
-def iteration(device, augment_type, dataset_type, model, criterion, optim_schedule,
+def iteration(device, augment_type, dataset_type, model, criterion, schedule, optim,
               epochs, train_loader, valid_loader, early_stopping_callback):
     # Train & Valid at same time
     max_grad_norm = 5
@@ -20,8 +20,7 @@ def iteration(device, augment_type, dataset_type, model, criterion, optim_schedu
 
         model.train()
         for id, data in enumerate(tqdm(train_loader)):
-            optim_schedule.zero_grad()
-            #optim.zero_grad()
+            optim.zero_grad()
 
             token_ids    = data['input_ids'].to(device)
             valid_length = data['valid_length']
@@ -31,15 +30,17 @@ def iteration(device, augment_type, dataset_type, model, criterion, optim_schedu
             output = model(token_ids, valid_length, segment_ids)
             loss   = criterion(output, label)
 
-            #loss.requires_grad_(True)
+           # optim_schedule.zero_grad()
+           # loss.requires_grad_(True)
             loss.backward()
-            optim_schedule.step_and_update_lr()
-            #torch.nn.utils.clip_grad_norm(model.parameters(), max_grad_norm)
-            #optim.step()
+           # optim_schedule.step_and_update_lr()
+            torch.nn.utils.clip_grad_norm(model.parameters(), max_grad_norm)
+            optim.step()
+            schedule.step()
             #optim_schedule.step()
 
             train_acc += calc_accuracy(output, label)
-        print(f'Epoch {epoch+1} Train Accuracy: {train_acc / (id+1)}')
+        print(f'Epoch {epoch} Train Accuracy: {train_acc / (id+1)}')
 
         model.eval()
         for id, data in enumerate(valid_loader):
@@ -51,10 +52,10 @@ def iteration(device, augment_type, dataset_type, model, criterion, optim_schedu
             output = model(token_ids, valid_length, segment_ids)
 
             test_acc += calc_accuracy(output, label)
-        print(f'Epoch {epoch+1} Valid Accuracy: {test_acc / (id+1)}')
+        print(f'Epoch {epoch} Test Accuracy: {test_acc / (id+1)}')
 
         if early_stopping_callback(augment_type, dataset_type, model, epoch, test_acc / (id+1)):
-            print(f'Early Stopping at Epoch {epoch+1}\n')
+            print(f'Early Stopping at Epoch {epoch}\n')
             break
     return early_stopping_callback.best_epoch
 
@@ -103,8 +104,7 @@ class ScheduledOptim():
     def _get_lr_scale(self):
         return np.min([
             np.power(self.current_step, -0.5),
-            np.power(self.warmup_steps, -1.5) * self.current_step
-        ])
+            np.power(self.warmup_steps, -1.5) * self.current_step])
     
     
     def _update_lr(self):

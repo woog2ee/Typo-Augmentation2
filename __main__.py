@@ -7,7 +7,9 @@ from transformers.optimization import get_cosine_schedule_with_warmup
 from model import BERTClassifier, EarlyStopping
 from torch.optim import Adam
 from trainer import ScheduledOptim, iteration, predict
+import random
 import argparse
+import numpy as np
 import pandas as pd
 
 
@@ -19,26 +21,32 @@ if __name__ == '__main__':
                         default=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
     
     parser.add_argument('--train_dataset_path', type=str)
-    parser.add_argument('--valid_dataset_path', type=str)
+    #parser.add_argument('--valid_dataset_path', type=str)
     parser.add_argument('--test_dataset_path', type=str)
     parser.add_argument('--dataset_type', type=str)
     parser.add_argument('--augment_type', type=str)
     parser.add_argument('--save_path', type=str)
 
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--seed', type=int, default=52)
+    parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--num_workers', type=int, default=10)
     parser.add_argument('--warmup_ratio', type=float, default=0.1)
 
     parser.add_argument('--max_length', type=int, default=128)
-    parser.add_argument('--lr', type=float, default=5e-4)
+    parser.add_argument('--lr', type=float, default=3e-6)
 
-    parser.add_argument('--epochs', type=int, default=20)
+    parser.add_argument('--epochs', type=int, default=10)
 
     print('Loading All Parse Arguments\n')
     args = parser.parse_args()
     
 
-    print(f'Using Device: {args.device}\n')
+    print(f'Using Device: {args.device} & Setting Seeds\n')
+    seed = args.seed
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
     print('Loading Train & Test Dataset\n')
@@ -49,11 +57,11 @@ if __name__ == '__main__':
                                 split_type   = 'train',
                                 model_path   = model_path,
                                 max_length   = args.max_length)
-    valid_dataset = BERTDataset(dataset_path = args.valid_dataset_path,
-                                dataset_type = args.dataset_type,
-                                split_type   = 'valid',
-                                model_path   = model_path,
-                                max_length   = args.max_length)
+    # valid_dataset = BERTDataset(dataset_path = args.valid_dataset_path,
+    #                             dataset_type = args.dataset_type,
+    #                             split_type   = 'valid',
+    #                             model_path   = model_path,
+    #                             max_length   = args.max_length)
     test_dataset  = BERTDataset(dataset_path = args.train_dataset_path,
                                 dataset_type = args.dataset_type,
                                 split_type   = 'test',
@@ -65,9 +73,9 @@ if __name__ == '__main__':
     train_loader = DataLoader(train_dataset,
                               batch_size  = args.batch_size,
                               num_workers = args.num_workers)
-    valid_loader = DataLoader(valid_dataset,
-                              batch_size  = args.batch_size,
-                              num_workers = args.num_workers)
+    # valid_loader = DataLoader(valid_dataset,
+    #                           batch_size  = args.batch_size,
+    #                           num_workers = args.num_workers)
     test_loader  = DataLoader(test_dataset,
                               batch_size  = args.batch_size,
                               num_workers = args.num_workers)
@@ -83,27 +91,27 @@ if __name__ == '__main__':
     
     
     print('Setting Optimzier\n')
-    optim = Adam(params       = model.parameters(),
-                 lr           = args.lr,
-                 betas        = (0.9, 0.999),
-                 weight_decay = 0.01)
-    optim_schedule = ScheduledOptim(optimizer    = optim,
-                                    d_model      = 768,
-                                    warmup_steps = 5000)
+    # optim = Adam(params       = model.parameters(),
+    #              lr           = args.lr,
+    #              betas        = (0.9, 0.999),
+    #              weight_decay = 0.01)
+    # optim_schedule = ScheduledOptim(optimizer    = optim,
+    #                                 d_model      = 768,
+    #                                 warmup_steps = 10000)
 
-    # no_decay = ['bias', 'LayerNorm.weight']
-    # optimizer_grouped_parameters = [
-    #     {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
-    #     {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-    # ]
-    # optim = AdamW(optimizer_grouped_parameters,
-    #               lr = args.lr)
+    no_decay = ['bias', 'LayerNorm.weight']
+    optimizer_grouped_parameters = [
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+    ]
+    optim = AdamW(optimizer_grouped_parameters,
+                  lr = args.lr)
 
-    # t_total     = len(train_loader) * args.epochs
-    # warmup_step = int(t_total * args.warmup_ratio)
-    # schedule    = get_cosine_schedule_with_warmup(optim,
-    #                                               num_warmup_steps   = warmup_step,
-    #                                               num_training_steps = t_total)
+    t_total     = len(train_loader) * args.epochs
+    warmup_step = int(t_total * args.warmup_ratio)
+    schedule    = get_cosine_schedule_with_warmup(optim,
+                                                  num_warmup_steps   = warmup_step,
+                                                  num_training_steps = t_total)
     
     early_stopping_callback = EarlyStopping(patience  = 5,
                                             save_path = args.save_path)
@@ -115,25 +123,25 @@ if __name__ == '__main__':
                            dataset_type            = args.dataset_type,
                            model                   = model,
                            criterion               = loss_fn,
-                           optim_schedule          = optim_schedule,
-                           #optim                   = optim,
+                           schedule                = schedule,
+                           optim                   = optim,
                            #optim_schedule          = schedule,
                            epochs                  = args.epochs,
                            train_loader            = train_loader,
-                           valid_loader            = valid_loader,
+                           valid_loader            = test_loader,
                            early_stopping_callback = early_stopping_callback)
     
 
-    print('Testing Start\n')
-    test_pred, test_label, test_acc = predict(device       = args.device,
-                                              augment_type = args.augment_type,
-                                              dataset_type = args.dataset_type,
-                                              save_path    = args.save_path,
-                                              best_epoch   = best_epoch,
-                                              test_loader  = test_loader)
+    # print('Testing Start\n')
+    # test_pred, test_label, test_acc = predict(device       = args.device,
+    #                                           augment_type = args.augment_type,
+    #                                           dataset_type = args.dataset_type,
+    #                                           save_path    = args.save_path,
+    #                                           best_epoch   = best_epoch,
+    #                                           test_loader  = test_loader)
 
-    test_result  = pd.DataFrame({'pred': test_pred, 'label': test_label, 'acc': test_acc})
-    test_avg_acc = sum(list(test_result['acc'])) / len(test_result)
+    # test_result  = pd.DataFrame({'pred': test_pred, 'label': test_label, 'acc': test_acc})
+    # test_avg_acc = sum(list(test_result['acc'])) / len(test_result)
 
-    print(f'Testing Average Accuracy: {test_avg_acc}\n')
-    test_result.to_csv(args.save_path+f'{args.dataset_type}_{best_epoch}.csv', index=False)
+    # print(f'Testing Average Accuracy: {test_avg_acc}\n')
+    # test_result.to_csv(args.save_path+f'{args.dataset_type}_{best_epoch}.csv', index=False)

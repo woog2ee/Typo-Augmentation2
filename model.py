@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import os
 
 
 
@@ -44,11 +45,14 @@ class EarlyStopping():
 
     def __call__(self, augment_type, dataset_type, model, epoch, acc):
         if acc >= self.best_acc:
+            if self.best_epoch != 0:
+                os.remove(self.save_path+f'{augment_type}_{dataset_type}_{self.best_epoch}_ckp.pt')
+
             self.cnt        = 0
             self.best_acc   = acc
             self.best_epoch = epoch
 
-            torch.save(model, self.save_path+f'{augment_type}_{dataset_type}_{epoch+1}_ckp.pt')
+            torch.save(model, self.save_path+f'{augment_type}_{dataset_type}_{epoch}_ckp.pt')
             self.stop = False
         else:
             self.cnt += 1

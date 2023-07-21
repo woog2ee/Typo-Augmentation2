@@ -43,7 +43,11 @@ class BERTDataset(Dataset):
 
 
     def clean_text(self, text):
-        return repeat_normalize(text, num_repeats=2).strip()
+        try: return text.strip()
+        except:
+            print(text)
+            exit()
+        #return repeat_normalize(text, num_repeats=2).strip()
 
 
     def __len__(self):
